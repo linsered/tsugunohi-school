@@ -188,10 +188,13 @@ func _ready() -> void:
 
 
 func _font(res: String, abs_path: String) -> FontFile:
+	# 优先用 load()：Godot 已把 ttf 导入为 .fontdata 资源，导出包里源文件不存在，
+	# load() 会按 .import 的 remap 取到导入资源；load_dynamic_font 直接读源文件路径会失败。
+	if ResourceLoader.exists(res):
+		var loaded := load(res)
+		if loaded is FontFile:
+			return loaded
 	var f := FontFile.new()
-	if ResourceLoader.exists(res) and f.load_dynamic_font(res) == OK:
-		return f
-	f = FontFile.new()
 	if f.load_dynamic_font(abs_path) == OK:
 		return f
 	return null
@@ -1242,6 +1245,13 @@ func _verify_crowd() -> int:
 
 func _verify_run() -> void:
 	var fails := 0
+	# 字体自检：内嵌字体必须加载成功且包含游戏用字，否则 Web 端中文会变码位方框
+	var font_ok: bool = font_ui != null and font_ui.has_char("放".unicode_at(0)) \
+		and font_serif != null and font_serif.has_char("后".unicode_at(0))
+	print("[verify] font loaded=%s cjk=%s %s" %
+		[font_ui != null, font_ok, "OK" if font_ok else "FAIL"])
+	if not font_ok:
+		fails += 1
 	var cases := [
 		{"mirror": 0.0, "still": 0.0, "want": "normal"},
 		{"mirror": 2.6, "still": 0.0, "want": "taken"},
