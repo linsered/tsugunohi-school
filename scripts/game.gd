@@ -108,6 +108,7 @@ var is_mobile := false
 var touch_left := false          # ← 箭头是否被按住
 var touch_root: Control
 var touch_left_btn: Button
+var rotate_root: Control         # 竖屏时提示横屏的遮罩
 
 var font_ui: FontFile
 var font_serif: FontFile
@@ -128,22 +129,27 @@ const DAYS := [
 
 func _ready() -> void:
 	randomize()
-	# 移动端检测：原生 mobile，或设备支持触摸（覆盖手机/平板浏览器，含横屏）
-	# Web 上优先用浏览器 API 判断（比 Godot 触摸检测更可靠、更早生效）
-	is_mobile = OS.has_feature("mobile") or DisplayServer.is_touchscreen_available()
-	if OS.has_feature("web"):
-		var touch_web: Variant = JavaScriptBridge.eval(
-			"(navigator.maxTouchPoints > 0 || 'ontouchstart' in window) ? 1 : 0")
-		if int(touch_web) == 1:
-			is_mobile = true
 	var a := OS.get_cmdline_args()
 	var ua := OS.get_cmdline_user_args()
 	dev_mode = a.has("--shots") or ua.has("--shots")
 	verify_mode = a.has("--verify") or ua.has("--verify")
 	autoplay = a.has("--autoplay") or ua.has("--autoplay")
-	# --mobile 强制移动端模式，便于在桌面调试触摸按钮
-	if a.has("--mobile") or ua.has("--mobile"):
+	# --mobile 强制移动端模式，仅用于桌面调试触摸按钮，不触发真实横屏旋转
+	var force_mobile := a.has("--mobile") or ua.has("--mobile")
+
+	# 移动端检测：只认真正的手机/平板，触屏笔记本不算。
+	# 触摸能力不能作为依据（触屏笔记本也支持触摸），Web 上改用 UA 判断。
+	is_mobile = OS.has_feature("mobile")
+	if OS.has_feature("web"):
+		var ua_js: Variant = JavaScriptBridge.eval(
+			"/android|iphone|ipad|ipod|mobile|silk|kindle/i.test(navigator.userAgent) ? 1 : 0")
+		if int(ua_js) == 1:
+			is_mobile = true
+	if force_mobile:
 		is_mobile = true
+	# 真实移动端请求横屏（原生直接旋转；Web 尽力锁定，失败靠竖屏提示引导）
+	if OS.has_feature("mobile"):
+		_request_landscape()
 
 	for p in ["res://assets/art/p.png", "res://assets/art/wall.png"]:
 		tex[p] = load(p)
@@ -429,6 +435,104 @@ func _build_ui() -> void:
 		gallery_labels.append(gl)
 
 	_build_touch_controls()
+	_build_rotate_hint()
+
+
+# 请求横屏：原生移动端直接旋转屏幕；Web 端尽力调用屏幕方向锁（多数浏览器需全屏会拒绝，
+# 因此仍有竖屏提示遮罩兜底）
+func _request_landscape() -> void:
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval(
+			"(function(){try{if(screen.orientation&&screen.orientation.lock){"
+			+ "var p=screen.orientation.lock('landscape');"
+			+ "if(p&&p['catch']){p['catch'](function(){});}}}catch(e){}return 0;})()")
+	else:
+		if DisplayServer.screen_get_orientation() != DisplayServer.SCREEN_LANDSCAPE:
+			DisplayServer.screen_set_orientation(DisplayServer.SCREEN_LANDSCAPE)
+
+
+# 当前是否竖屏（原生读窗口尺寸，Web 读浏览器视口）
+func _is_portrait() -> bool:
+	var w := VW
+	var h := VH
+	if OS.has_feature("web"):
+		var vw: Variant = JavaScriptBridge.eval("window.innerWidth||screen.width")
+		var vh: Variant = JavaScriptBridge.eval("window.innerHeight||screen.height")
+		w = float(vw)
+		h = float(vh)
+	elif DisplayServer.get_name() != "headless":
+		var sz := DisplayServer.window_get_size()
+		w = float(sz.x)
+		h = float(sz.y)
+	return h > w
+
+
+func _build_rotate_hint() -> void:
+	if not is_mobile:
+		return
+	rotate_root = Control.new()
+	rotate_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	rotate_root.mouse_filter = Control.MOUSE_FILTER_STOP
+	var bg := ColorRect.new()
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0.03, 0.04, 0.06, 0.98)
+	rotate_root.add_child(bg)
+
+	# 用几何矩形画「竖屏手机 → 横屏手机」，避免依赖字体里没有的特殊符号
+	var mid_y := VH / 2 - 90
+	var sb_phone := StyleBoxFlat.new()
+	sb_phone.bg_color = Color(0.10, 0.12, 0.15, 1)
+	sb_phone.border_color = Color(0.88, 0.90, 0.86, 1)
+	sb_phone.set_border_width_all(4)
+	sb_phone.set_corner_radius_all(7)
+
+	var phone_v := Panel.new()
+	phone_v.position = Vector2(VW / 2 - 190, mid_y)
+	phone_v.size = Vector2(58, 104)
+	phone_v.add_theme_stylebox_override("panel", sb_phone)
+	rotate_root.add_child(phone_v)
+
+	var arrow := Label.new()
+	arrow.text = "→"
+	arrow.position = Vector2(VW / 2 - 92, mid_y + 16)
+	arrow.size = Vector2(90, 70)
+	arrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if font_ui != null:
+		arrow.add_theme_font_override("font", font_ui)
+	arrow.add_theme_font_size_override("font_size", 56)
+	arrow.add_theme_color_override("font_color", Color(0.88, 0.90, 0.86, 1))
+	rotate_root.add_child(arrow)
+
+	var phone_h := Panel.new()
+	phone_h.position = Vector2(VW / 2 + 40, mid_y + 22)
+	phone_h.size = Vector2(104, 58)
+	phone_h.add_theme_stylebox_override("panel", sb_phone)
+	rotate_root.add_child(phone_h)
+
+	var tip := Label.new()
+	tip.text = "请横屏游玩"
+	tip.position = Vector2(VW / 2 - 250, VH / 2 + 10)
+	tip.size = Vector2(500, 70)
+	tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if font_ui != null:
+		tip.add_theme_font_override("font", font_ui)
+	tip.add_theme_font_size_override("font_size", 40)
+	tip.add_theme_color_override("font_color", Color(0.90, 0.91, 0.88, 1))
+	rotate_root.add_child(tip)
+
+	var sub := Label.new()
+	sub.text = "旋转设备至横向以获得完整体验"
+	sub.position = Vector2(VW / 2 - 350, VH / 2 + 80)
+	sub.size = Vector2(700, 50)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if font_ui != null:
+		sub.add_theme_font_override("font", font_ui)
+	sub.add_theme_font_size_override("font_size", 24)
+	sub.add_theme_color_override("font_color", Color(0.62, 0.65, 0.64, 1))
+	rotate_root.add_child(sub)
+
+	rotate_root.visible = false
+	ui.add_child(rotate_root)  # 最后添加 → 盖在最上层
 
 
 func _build_touch_controls() -> void:
@@ -823,12 +927,19 @@ func _process(dt: float) -> void:
 	if autoplay:
 		dt *= 6.0
 	anim_t += dt
-	walking = (autoplay or _left()) and st == St.PLAY and forced_stop <= 0.0
 
-	# 触摸箭头只在游戏进行中显示
+	# 移动端竖屏 → 显示横屏提示遮罩、隐藏箭头、暂停行走
+	var portrait := is_mobile and rotate_root != null and not verify_mode and _is_portrait()
+	if is_mobile and rotate_root != null:
+		rotate_root.visible = portrait
+	if portrait:
+		touch_left = false
+	walking = (autoplay or _left()) and st == St.PLAY and forced_stop <= 0.0 and not portrait
+
+	# 触摸箭头只在游戏进行中、且非竖屏时显示
 	if is_mobile and touch_root != null:
-		touch_root.visible = (st == St.PLAY)
-		if st != St.PLAY:
+		touch_root.visible = (st == St.PLAY) and not portrait
+		if st != St.PLAY or portrait:
 			touch_left = false
 
 	match st:
@@ -1333,9 +1444,17 @@ func _verify_run() -> void:
 		fails += 1
 	if is_mobile:
 		var touch_ok: bool = touch_root != null and touch_left_btn != null
-		print("[verify] mobile touch control built=%s %s" %
-			[touch_ok, "OK" if touch_ok else "FAIL"])
-		if not touch_ok:
+		var rotate_ok: bool = rotate_root != null
+		print("[verify] mobile controls: touch=%s rotate_hint=%s %s" %
+			[touch_ok, rotate_ok, "OK" if (touch_ok and rotate_ok) else "FAIL"])
+		if not (touch_ok and rotate_ok):
+			fails += 1
+	else:
+		# 桌面端不应创建触摸箭头与横屏遮罩（只有移动端才出现按键）
+		var leak: bool = touch_root != null or rotate_root != null
+		print("[verify] desktop has no touch controls=%s %s" %
+			[not leak, "OK" if not leak else "FAIL"])
+		if leak:
 			fails += 1
 	var cases := [
 		{"mirror": 0.0, "still": 0.0, "want": "normal"},
