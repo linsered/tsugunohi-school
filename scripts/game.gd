@@ -103,6 +103,12 @@ var title_big: Label
 var title_small: Label
 var title_hint: Label
 
+# 移动端触摸控制
+var is_mobile := false
+var touch_left := false          # ← 箭头是否被按住
+var touch_root: Control
+var touch_left_btn: Button
+
 var font_ui: FontFile
 var font_serif: FontFile
 var tex := {}
@@ -122,11 +128,22 @@ const DAYS := [
 
 func _ready() -> void:
 	randomize()
+	# 移动端检测：原生 mobile，或设备支持触摸（覆盖手机/平板浏览器，含横屏）
+	# Web 上优先用浏览器 API 判断（比 Godot 触摸检测更可靠、更早生效）
+	is_mobile = OS.has_feature("mobile") or DisplayServer.is_touchscreen_available()
+	if OS.has_feature("web"):
+		var touch_web: Variant = JavaScriptBridge.eval(
+			"(navigator.maxTouchPoints > 0 || 'ontouchstart' in window) ? 1 : 0")
+		if int(touch_web) == 1:
+			is_mobile = true
 	var a := OS.get_cmdline_args()
 	var ua := OS.get_cmdline_user_args()
 	dev_mode = a.has("--shots") or ua.has("--shots")
 	verify_mode = a.has("--verify") or ua.has("--verify")
 	autoplay = a.has("--autoplay") or ua.has("--autoplay")
+	# --mobile 强制移动端模式，便于在桌面调试触摸按钮
+	if a.has("--mobile") or ua.has("--mobile"):
+		is_mobile = true
 
 	for p in ["res://assets/art/p.png", "res://assets/art/wall.png"]:
 		tex[p] = load(p)
@@ -411,6 +428,56 @@ func _build_ui() -> void:
 		title_root.add_child(gl)
 		gallery_labels.append(gl)
 
+	_build_touch_controls()
+
+
+func _build_touch_controls() -> void:
+	if not is_mobile:
+		return
+	touch_root = Control.new()
+	touch_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	touch_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	touch_root.visible = false
+	ui.add_child(touch_root)
+
+	# 左下角大箭头：按住向左走（游戏唯一必需操作）
+	touch_left_btn = Button.new()
+	touch_left_btn.text = "←"
+	touch_left_btn.position = Vector2(64, VH - 176)
+	touch_left_btn.size = Vector2(132, 132)
+	touch_left_btn.flat = false
+	touch_left_btn.focus_mode = Control.FOCUS_NONE
+	if font_ui != null:
+		touch_left_btn.add_theme_font_override("font", font_ui)
+	touch_left_btn.add_theme_font_size_override("font_size", 72)
+	touch_left_btn.add_theme_color_override("font_color", Color(0.92, 0.93, 0.90, 0.92))
+	touch_left_btn.add_theme_color_override("font_pressed_color", Color(1, 1, 1, 1))
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.08, 0.10, 0.42)
+	sb.border_color = Color(0.72, 0.75, 0.74, 0.5)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(66)
+	var sb_press := StyleBoxFlat.new()
+	sb_press.bg_color = Color(0.30, 0.34, 0.36, 0.72)
+	sb_press.border_color = Color(0.92, 0.93, 0.90, 0.85)
+	sb_press.set_border_width_all(2)
+	sb_press.set_corner_radius_all(66)
+	touch_left_btn.add_theme_stylebox_override("normal", sb)
+	touch_left_btn.add_theme_stylebox_override("hover", sb)
+	touch_left_btn.add_theme_stylebox_override("pressed", sb_press)
+	touch_left_btn.add_theme_stylebox_override("focus", sb)
+	touch_left_btn.add_theme_stylebox_override("disabled", sb)
+	touch_left_btn.button_down.connect(_on_touch_left_down)
+	touch_left_btn.button_up.connect(_on_touch_left_up)
+	touch_root.add_child(touch_left_btn)
+
+
+func _on_touch_left_down() -> void:
+	touch_left = true
+
+
+func _on_touch_left_up() -> void:
+	touch_left = false
 
 
 func _mk_label(txt: String, size: int, f: Font, col: Color) -> Label:
@@ -574,6 +641,10 @@ func _update_title() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	# 触摸松开兜底：手指滑出箭头按钮后松开也要停止行走
+	if (event is InputEventScreenTouch and not event.pressed) \
+		or (event is InputEventMouseButton and not event.pressed):
+		touch_left = false
 	if event is InputEventMouseButton and event.pressed:
 		if st == St.GALLERY:
 			_enter_title()
@@ -678,7 +749,8 @@ func _begin_play() -> void:
 	st = St.PLAY
 	card_root.visible = false
 	if day == 0:
-		_show_hint("按住  ←　松开就停下。停下会被看见。", 5.0)
+		_show_hint("按住  箭头　松开就停下。停下会被看见。" if is_mobile
+			else "按住  ←　松开就停下。停下会被看见。", 5.0)
 
 
 func _next_day() -> void:
@@ -736,7 +808,8 @@ func _ending(kind: String) -> void:
 		for e in ENDINGS:
 			if String(e["id"]) == kind:
 				nm = String(e["name"])
-		end_text.text = "%s\n\n%s\n\n\n—  按 Enter 返回标题  —" % [nm, _ending_body(kind)])
+		var back_tip := "轻触屏幕返回标题" if is_mobile else "按 Enter 返回标题"
+		end_text.text = "%s\n\n%s\n\n\n—  %s  —" % [nm, _ending_body(kind), back_tip])
 	tw.tween_property(end_text, "modulate:a", 1.0, 1.6)
 
 
@@ -751,6 +824,12 @@ func _process(dt: float) -> void:
 		dt *= 6.0
 	anim_t += dt
 	walking = (autoplay or _left()) and st == St.PLAY and forced_stop <= 0.0
+
+	# 触摸箭头只在游戏进行中显示
+	if is_mobile and touch_root != null:
+		touch_root.visible = (st == St.PLAY)
+		if st != St.PLAY:
+			touch_left = false
 
 	match st:
 		St.TITLE:
@@ -791,7 +870,7 @@ func _just(code: int) -> bool:
 
 func _left() -> bool:
 	return (Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A)
-		or Input.is_action_pressed("ui_left"))
+		or Input.is_action_pressed("ui_left") or touch_left)
 
 
 func _retry() -> void:
@@ -1252,6 +1331,12 @@ func _verify_run() -> void:
 		[font_ui != null, font_ok, "OK" if font_ok else "FAIL"])
 	if not font_ok:
 		fails += 1
+	if is_mobile:
+		var touch_ok: bool = touch_root != null and touch_left_btn != null
+		print("[verify] mobile touch control built=%s %s" %
+			[touch_ok, "OK" if touch_ok else "FAIL"])
+		if not touch_ok:
+			fails += 1
 	var cases := [
 		{"mirror": 0.0, "still": 0.0, "want": "normal"},
 		{"mirror": 2.6, "still": 0.0, "want": "taken"},
