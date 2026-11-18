@@ -5,6 +5,12 @@
 一款横向卷轴的心理恐怖小品。你只需要按住 **←** 一直向左走。五天里反复走同一条走廊，
 擦肩而过的人一天比一天不对劲——直到最后一天，走廊上全是他们。
 
+## 在线游玩
+
+**https://linsered.github.io/tsugunohi-school/**
+
+打开即用，无需安装。建议戴耳机、全屏，并保持按住 **←**。
+
 ---
 
 ## 玩法
@@ -157,8 +163,29 @@ Windows 下双击 `play.bat` 也可以（引擎已放在 `engine/`，无需另�
 │   ├── audio/         # 程序化合成音效
 │   └── fonts/
 ├── tools/             # 素材管线脚本（Python + Pillow）
-└── docs/              # 设计拆解与开发记录
+├── docs/              # GitHub Pages 站点根：Web 构建产物（index.html/wasm/pck）
+│   └── design-notes.md  # 设计拆解与开发记录
+└── build/web/         # Web 导出原始产物（不入库，构建后复制到 docs/）
 ```
+
+---
+
+## 构建与部署
+
+Web 构建由 Godot 4.7.2 + Web 导出模板生成，导出预设见 `export_presets.cfg`，
+输出目录为 `build/web/`。站点从 `main` 分支的 `/docs` 目录经 GitHub Pages 部署：
+
+```bash
+# 1. 导出 Web（需安装对应版本的导出模板）
+godot --headless --path . --export-release "Web"
+
+# 2. 复制到 Pages 目录并提交
+cp -r ../build/web/. docs/
+git add docs && git commit -m "更新 Web 构建" && git push
+```
+
+推送后 GitHub Pages 自动重建，约 30 秒后站点更新。本仓库已开启 Pages（legacy 流程，
+HTTPS 强制）。也可用 `--verify` / `--autoplay` 做本地回归后再导出。
 
 ---
 
@@ -166,7 +193,8 @@ Windows 下双击 `play.bat` 也可以（引擎已放在 `engine/`，无需另�
 
 - **人物与门的比例不成立**。平视侧立面 + 上半身特写这两个要求在几何上互相矛盾：
   人物是前景贴片，门在中景，没有透视兜底。彻底解决需要改成背后跟随的透视镜头。
-- **暂无 Web 构建**。当前环境缺少 Godot 导出模板且无法联网拉取，只能从源码运行。
+- **Web 版加载体积约 51MB**（wasm 38MB + pck 13MB），首次打开需等待浏览器下载与编译，
+  之后会走缓存。低配设备帧率可能下降。
 - 退出时偶发 `1 resources still in use`，属 tween 持有贴图引用的良性告警，不影响游玩。
 
 ---
