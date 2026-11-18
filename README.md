@@ -201,4 +201,6 @@ HTTPS 强制）。也可用 `--verify` / `--autoplay` 做本地回归后再导�
 
 ## 素材声明
 
-全部立绘、背景、音效均为本项目内生成，不含任何第三方素材；代码为原创实现。
+立绘、背景、音效均为本项目内生成，代码为原创实现。内嵌的中文字体为
+Noto Sans SC / Noto Serif SC 的游戏字形子集，采用 SIL Open Font License 1.1
+授权（见 `assets/fonts/OFL-NOTO.txt`），可合法随项目分发。

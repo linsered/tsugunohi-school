@@ -16,6 +16,7 @@ _cut/
 Thumbs.db
 .DS_Store
 
-# 系统字体（有版权，不可随仓库分发；运行时会回退到 C:/Windows/Fonts）
+# 系统专有字体（有版权，不可随仓库分发）
+# 内嵌的 ui.ttf / serif.ttf 是 OFL 授权的 Noto 子集字体，需入库
 assets/fonts/*.ttc
 assets/fonts/*.otf

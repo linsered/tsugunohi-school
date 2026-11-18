@@ -169,8 +169,11 @@ func _ready() -> void:
 			"hum_light", "bell", "musicbox", "heartbeat", "door", "stinger", "whisper", "drip", "scrape"]:
 		sb[n] = load("res://assets/audio/%s.wav" % n)
 
-	font_ui = _font("res://assets/fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttc")
-	font_serif = _font("res://assets/fonts/simsun.ttc", "C:/Windows/Fonts/simsun.ttc")
+	# 内嵌 Noto SC 子集字体（可分发），Web 导出与无系统字体环境都能正确显示中文
+	font_ui = _font("res://assets/fonts/ui.ttf", "C:/Windows/Fonts/ui.ttf")
+	font_serif = _font("res://assets/fonts/serif.ttf", "C:/Windows/Fonts/serif.ttf")
+	if font_ui == null:
+		font_ui = _font("res://assets/fonts/msyh.ttc", "C:/Windows/Fonts/msyh.ttc")
 	if font_serif == null:
 		font_serif = font_ui
 
