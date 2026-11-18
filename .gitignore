@@ -1,0 +1,21 @@
+# Godot
+.godot/
+*.translation
+export_presets.cfg
+
+# 引擎运行时（体积大，不入库）
+engine/
+
+# 开发过程产物
+_dev/
+_cut/
+*.log
+*.tmp
+
+# 系统
+Thumbs.db
+.DS_Store
+
+# 系统字体（有版权，不可随仓库分发；运行时会回退到 C:/Windows/Fonts）
+assets/fonts/*.ttc
+assets/fonts/*.otf
